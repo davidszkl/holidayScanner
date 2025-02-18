@@ -1,10 +1,9 @@
 #!/usr/bin/python3
 
 import datetime
-from statistics import mean, median
+from statistics import mean
 import dateutil.relativedelta
 import requests
-import sqlite3 
 from concurrent.futures import ThreadPoolExecutor 
 
 conn = None

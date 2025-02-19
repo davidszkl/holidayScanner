@@ -1,9 +1,10 @@
 #!/usr/bin/python3
 
 import datetime
+import json
 from statistics import mean
-import dateutil.relativedelta
 import requests
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor 
 
 conn = None
@@ -19,18 +20,33 @@ class FlightRecord():
 
     def __repr__(self):
         return f"{self.date_flight}: {self.price}€"
+    
+class Trip():
+    def __init__(self, **kwargs):
+        self.name = kwargs.get("name")
+        self.airport = kwargs.get("airport")
+        self.dates = kwargs.get("dates")
+        self.date_start = kwargs.get("date_start")
+        self.date_end = kwargs.get("date_end")
+        self.days_of_week = kwargs.get("days_of_week")
 
-def get_departure_dates(start_date: datetime.date, end_date):
-    departure_dates = []
-    while start_date <= end_date:
-        if start_date.weekday() in (3, 4):
-            departure_dates.append(start_date)
-        start_date += datetime.timedelta(days = 1)
+    def __repr__(self):
+        return f"{self.name}: {self.airport}"
+
+def get_departure_dates(trip: Trip):
+    departure_dates = set(datetime.date.fromisoformat(jsondate) for jsondate in trip.dates)
+    date_start = datetime.datetime.strptime(trip.date_start, "%Y-%m-%d").date() if trip.date_start else datetime.date.today()
+    date_end = datetime.datetime.strptime(trip.date_end, "%Y-%m-%d").date()
+
+    while date_start <= date_end:
+        if date_start.weekday() in trip.days_of_week:
+            departure_dates.add(date_start)
+        date_start += datetime.timedelta(days = 1)
 
     return departure_dates
 
-def get_offers(ddate):
-    url = f"https://www.waya.travel/api/graphql?query=%20%20%20%20query%20searchOutbound($partner:%20Partner!,%20$origin:%20String!,%20$destination:%20String!,%20$passengerAges:%20[PositiveInt!]!,%20$metadata:%20Metadata!,%20$departureDateString:%20String!,%20$returnDateString:%20String,%20$sort:%20Sort,%20$limit:%20PositiveInt,%20$filters:%20OfferFiltersInput,%20$utmSource:%20String)%20{{%20%20boundSearch:%20searchOutbound(%20%20%20%20partner:%20$partner%20%20%20%20origin:%20$origin%20%20%20%20destination:%20$destination%20%20%20%20passengerAges:%20$passengerAges%20%20%20%20metadata:%20$metadata%20%20%20%20departureDateString:%20$departureDateString%20%20%20%20returnDateString:%20$returnDateString%20%20%20%20sort:%20$sort%20%20%20%20limit:%20$limit%20%20%20%20filters:%20$filters%20%20%20%20utmSource:%20$utmSource%20%20)%20{{%20%20%20%20offers%20{{%20%20%20%20%20%20...Offer%20%20%20%20}}%20%20%20%20offersFilters%20{{%20%20%20%20%20%20...OffersFilters%20%20%20%20}}%20%20}}}}%20%20%20%20%20%20%20%20fragment%20Offer%20on%20Offer%20{{%20%20id%20%20journeyId%20%20price%20%20pricePerPerson%20%20outboundPricePerPerson%20%20homeboundPricePerPerson%20%20currency%20%20transferURL%20%20duration%20%20itinerary%20{{%20%20%20%20...Itinerary%20%20}}%20%20passengerAges%20%20isOneWay}}%20%20%20%20%20%20%20%20fragment%20Itinerary%20on%20Itinerary%20{{%20%20outbound%20{{%20%20%20%20...Route%20%20}}%20%20homebound%20{{%20%20%20%20...Route%20%20}}}}%20%20%20%20%20%20%20%20fragment%20Route%20on%20Route%20{{%20%20id%20%20origin%20{{%20%20%20%20code%20%20%20%20name%20%20%20%20city%20%20%20%20country%20%20}}%20%20destination%20{{%20%20%20%20code%20%20%20%20name%20%20%20%20city%20%20%20%20country%20%20}}%20%20departure%20%20arrival%20%20duration%20%20operatingCarrier%20{{%20%20%20%20name%20%20%20%20code%20%20%20%20flightNumber%20%20}}%20%20marketingCarrier%20{{%20%20%20%20name%20%20%20%20code%20%20%20%20flightNumber%20%20}}%20%20legs%20{{%20%20%20%20...Leg%20%20}}}}%20%20%20%20%20%20%20%20fragment%20Leg%20on%20Leg%20{{%20%20id%20%20duration%20%20origin%20{{%20%20%20%20code%20%20%20%20name%20%20%20%20city%20%20%20%20country%20%20}}%20%20destination%20{{%20%20%20%20code%20%20%20%20name%20%20%20%20city%20%20%20%20country%20%20}}%20%20departure%20%20arrival%20%20carrierType%20%20operatingCarrier%20{{%20%20%20%20name%20%20%20%20code%20%20%20%20flightNumber%20%20}}%20%20marketingCarrier%20{{%20%20%20%20name%20%20%20%20code%20%20%20%20flightNumber%20%20}}}}%20%20%20%20%20%20%20%20fragment%20OffersFilters%20on%20OfferFilters%20{{%20%20overnightStay%20%20overnightFlight%20%20maxNumberOfStops%20%20carrierCodes%20%20cabinClass%20%20connectionTime%20{{%20%20%20%20min%20%20%20%20max%20%20}}%20%20landing%20{{%20%20%20%20outbound%20{{%20%20%20%20%20%20min%20%20%20%20%20%20max%20%20%20%20}}%20%20%20%20homebound%20{{%20%20%20%20%20%20min%20%20%20%20%20%20max%20%20%20%20}}%20%20}}%20%20takeoff%20{{%20%20%20%20outbound%20{{%20%20%20%20%20%20min%20%20%20%20%20%20max%20%20%20%20}}%20%20%20%20homebound%20{{%20%20%20%20%20%20min%20%20%20%20%20%20max%20%20%20%20}}%20%20}}}}%20%20%20%20&variables={{%22departureDateString%22:%22{ddate}%22,%22destination%22:%22TIA%22,%22filters%22:{{%22cabinClass%22:null,%22carrierCodes%22:[]}},%22limit%22:1,%22metadata%22:{{%22country%22:%22BE%22,%22currency%22:%22EUR%22,%22language%22:%22en%22}},%22origin%22:%22CRL%22,%22partner%22:%22waya%22,%22passengerAges%22:[25,25,25,25],%22returnDateString%22:%22{ddate}%22,%22sort%22:%22CHEAPEST%22,%22utmSource%22:%22%22}}"
+def get_offers(trip: Trip, ddate):
+    url = f'https://www.waya.travel/api/graphql?query=    query searchOutbound($partner: Partner!, $origin: String!, $destination: String!, $passengerAges: [PositiveInt!]!, $metadata: Metadata!, $departureDateString: String!, $returnDateString: String, $sort: Sort, $limit: PositiveInt, $filters: OfferFiltersInput, $utmSource: String) {{  boundSearch: searchOutbound(    partner: $partner    origin: $origin    destination: $destination    passengerAges: $passengerAges    metadata: $metadata    departureDateString: $departureDateString    returnDateString: $returnDateString    sort: $sort    limit: $limit    filters: $filters    utmSource: $utmSource  ) {{    offers {{      ...Offer    }}    offersFilters {{      ...OffersFilters    }}  }}}}        fragment Offer on Offer {{  id  journeyId  price  pricePerPerson  outboundPricePerPerson  homeboundPricePerPerson  currency  transferURL  duration  itinerary {{    ...Itinerary  }}  passengerAges  isOneWay}}        fragment Itinerary on Itinerary {{  outbound {{    ...Route  }}  homebound {{    ...Route  }}}}        fragment Route on Route {{  id  origin {{    code    name    city    country  }}  destination {{    code    name    city    country  }}  departure  arrival  duration  operatingCarrier {{    name    code    flightNumber  }}  marketingCarrier {{    name    code    flightNumber  }}  legs {{    ...Leg  }}}}        fragment Leg on Leg {{  id  duration  origin {{    code    name    city    country  }}  destination {{    code    name    city    country  }}  departure  arrival  carrierType  operatingCarrier {{    name    code    flightNumber  }}  marketingCarrier {{    name    code    flightNumber  }}}}        fragment OffersFilters on OfferFilters {{  overnightStay  overnightFlight  maxNumberOfStops  carrierCodes  cabinClass  connectionTime {{    min    max  }}  landing {{    outbound {{      min      max    }}    homebound {{      min      max    }}  }}  takeoff {{    outbound {{      min      max    }}    homebound {{      min      max    }}  }}}}    &variables={{"departureDateString":"{ddate}","destination":"{trip.airport}","filters":{{"cabinClass":null,"carrierCodes":[]}},"limit":1,"metadata":{{"country":"BE","currency":"EUR","language":"en"}},"origin":"CRL","partner":"waya","passengerAges":[25,25,25,25],"returnDateString":"{ddate}","sort":"CHEAPEST","utmSource":""}}'
     headers = {
         "accept": "*/*",
         "accept-encoding": "gzip, deflate, br, zstd",
@@ -62,6 +78,7 @@ def get_offers(ddate):
     return res.json()['data']['boundSearch']['offers']
 
 def compare_offer(offer):
+    print(f"found an offer for date {offer.date_flight.isoformat()}.")
     previous_offers = get_previous_offers(offer)
     previous_prices = [offer.price for offer in previous_offers]
     if not previous_prices:
@@ -69,20 +86,19 @@ def compare_offer(offer):
     mean_price = mean(previous_prices)
     lowest_price = min(previous_prices)
 
-    print(f"found an offer for date {offer.date_flight.isoformat()}.")
     if (offer.price < lowest_price):
-        print(f"it is the cheapest it has ever been! previous low: {lowest_price}€ now \033[1;32m{offer.price}\033[0m€")
+        print(f"it is the cheapest it has ever been! previous low: \033[1;31m{lowest_price:.2f}\033[0m€ now \033[1;32m{offer.price:.2f}\033[0m€")
     elif (offer.price < mean_price):
-        print(f"it is cheaper than before! average historical price: {mean_price}€ now \033[1;32m{offer.price}\033[0m€")
+        print(f"it is cheaper than before! average historical price: \033[1;31m{mean_price:.2f}\033[0m€ now \033[1;32m{offer.price:.2f}\033[0m€")
 
-def get_price_info(ddate: datetime.date):
+def get_price_info(trip: Trip, ddate: datetime.date):
     date_str = ddate.strftime("%Y-%m-%d")
-    offers = get_offers(date_str)
+    offers = get_offers(trip, date_str)
     if offers:
         offer = offers[0]
         offer_record = FlightRecord(
             date_flight=ddate,
-            destination="TIA",
+            destination=trip.airport,
             price=offer["outboundPricePerPerson"],
             date_search=datetime.datetime.now(),
             external_id=offer["id"]
@@ -94,34 +110,38 @@ def get_price_info(ddate: datetime.date):
 def save_price_info(flight_records):
     cursor = conn.cursor()
 
-    query = "INSERT INTO data (date_flight, destination, price, date_search, external_id) values "
-    for rec in flight_records:
-        query += f"('{rec.date_flight}', '{rec.destination}', {rec.price}, '{rec.date_search}', '{rec.external_id}'), "
-    if len(flight_records):
-        query = query[:-2]
-
-        query += """
-            ON CONFLICT(external_id) DO UPDATE SET
+    query = """
+        INSERT INTO data (date_flight, destination, price, date_search, external_id) 
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(external_id) DO UPDATE SET
             price = excluded.price,
             date_search = excluded.date_search
-        """
-    
-    cursor.execute(query)
+    """
+    values = [(rec.date_flight, rec.destination, rec.price, rec.date_search, rec.external_id) for rec in flight_records]
+    if values:
+        cursor.executemany(query, values)
+        print(f"Saved {len(flight_records)} offers.")
     conn.commit()
-    print(f"Saved {len(flight_records)} offers.")
 
-def scan_holidays():
-    departure_dates = get_departure_dates(datetime.date.today(), datetime.date.today() + dateutil.relativedelta.relativedelta(months = 3))
+def get_trips_to_watch():
+    with open("trips.json", "r+") as fd:
+        return [Trip(**tripjson) for tripjson in json.loads(fd.read())]
+
+def scan_holidays(trips):
     flight_records = []
     with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = []
-        for ddate in departure_dates:
-            futures.append(executor.submit(get_price_info, ddate))
+        for trip in trips:
+            print(f'Searching offers for trip {trip.name}')
+            departure_dates = get_departure_dates(trip)
 
-        for future in futures:
-            offer = future.result()
-            if offer:
-                flight_records.append(offer)
+            futures = []
+            for ddate in departure_dates:
+                futures.append(executor.submit(get_price_info, trip, ddate))
+
+            for future in futures:
+                offer = future.result()
+                if offer:
+                    flight_records.append(offer)
     save_price_info(flight_records)
 
 def init_database():
@@ -160,14 +180,22 @@ def get_previous_offers(offer):
         date_search = offer[5]
     ) for offer in previous_offers.fetchall()]
 
-def get_locations_offers():
+def get_locations_offers(trip: Trip):
     local_conn = sqlite3.connect("data.db")
     cursor = local_conn.cursor()
 
     previous_offers = cursor.execute("""
         SELECT * FROM data WHERE
-            destination = 'TIA'
-    """)
+            destination = ?
+    """, [trip.airport]).fetchall()
+
+    reduced_offers = {}
+    for offer in previous_offers: # 2 = date_flight, 4 = price
+        if offer[2] not in reduced_offers:
+            reduced_offers[offer[2]] = offer
+        else:
+            if offer[4] < reduced_offers[offer[2]][4]:
+                reduced_offers[offer[2]] = offer
 
     return [FlightRecord(
         external_id = offer[1],
@@ -175,18 +203,20 @@ def get_locations_offers():
         destination = offer[3],
         price = offer[4],
         date_search = offer[5]
-    ) for offer in previous_offers.fetchall()]
+    ) for offer in list(reduced_offers.values())]
 
-def show_best_dates():
-    location_offers = get_locations_offers()
-    sorted_offers = list(sorted(location_offers, key=lambda offer: offer.price))
-    print("RANKING:")
-    for offer in sorted_offers:
-        print(offer)
+def show_best_dates(trips):
+    for trip in trips:
+        location_offers = get_locations_offers(trip)
+        sorted_offers = list(sorted(location_offers, key=lambda offer: offer.price))
+        print(f"Best flights for {trip.name}:")
+        for offer in sorted_offers[:10]:
+            print(offer)
 
 if __name__ == "__main__":
     init_database()
-    scan_holidays()
-    show_best_dates()
+    trips = get_trips_to_watch()
+    scan_holidays(trips)
+    show_best_dates(trips)
     if conn:
         conn.close()

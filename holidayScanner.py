@@ -127,7 +127,8 @@ def get_trips_to_watch():
     with open("trips.json", "r+") as fd:
         return [Trip(**tripjson) for tripjson in json.loads(fd.read())]
 
-def scan_holidays(trips):
+def scan_holidays():
+    trips = get_trips_to_watch()
     flight_records = []
     with ThreadPoolExecutor(max_workers=10) as executor:
         for trip in trips:
@@ -205,8 +206,8 @@ def get_locations_offers(trip: Trip):
         date_search = offer[5]
     ) for offer in list(reduced_offers.values())]
 
-def show_best_dates(trips):
-    for trip in trips:
+def show_best_dates():
+    for trip in get_trips_to_watch():
         location_offers = get_locations_offers(trip)
         sorted_offers = list(sorted(location_offers, key=lambda offer: offer.price))
         print(f"Best flights for {trip.name}:")
@@ -215,8 +216,7 @@ def show_best_dates(trips):
 
 if __name__ == "__main__":
     init_database()
-    trips = get_trips_to_watch()
-    scan_holidays(trips)
-    show_best_dates(trips)
+    scan_holidays()
+    show_best_dates()
     if conn:
         conn.close()

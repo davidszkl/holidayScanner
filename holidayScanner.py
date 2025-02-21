@@ -2,10 +2,13 @@
 
 import datetime
 import json
+import os
 from statistics import mean
 import requests
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor 
+from discord_webhook import DiscordEmbed, DiscordWebhook
+from dotenv import load_dotenv
 
 conn = None
 
@@ -124,8 +127,10 @@ def save_price_info(flight_records):
     conn.commit()
 
 def get_trips_to_watch():
-    with open("trips.json", "r+") as fd:
-        return [Trip(**tripjson) for tripjson in json.loads(fd.read())]
+	url = "https://raw.githubusercontent.com/davidszkl/holidayScanner/refs/heads/master/trips.json"
+	response = requests.get(url)
+	response.raise_for_status()
+	return [Trip(**tripjson) for tripjson in response.json()]
 
 def scan_holidays():
     trips = get_trips_to_watch()
@@ -214,9 +219,28 @@ def show_best_dates():
         for offer in sorted_offers[:10]:
             print(offer)
 
+def notify_discord():
+
+    url = os.getenv("DISCORD_WEBHOOK_URL")
+    webhook = DiscordWebhook(url=url)
+
+    for trip in get_trips_to_watch():
+        location_offers = get_locations_offers(trip)
+        sorted_offers = list(sorted(location_offers, key=lambda offer: offer.price))
+        print(f"Best flights for {trip.name}:")
+        embed = DiscordEmbed(title=f"Best flights for {trip.name}:")
+        for offer in sorted_offers[:10]:
+            print(offer)
+            embed.add_embed_field(f"{offer.date_flight}: {offer.price}€", value="", inline=False)
+        webhook.add_embed(embed)
+
+    response = webhook.execute()
+
 if __name__ == "__main__":
+    load_dotenv()
     init_database()
     scan_holidays()
-    show_best_dates()
+    # show_best_dates()
+    notify_discord()
     if conn:
         conn.close()

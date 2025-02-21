@@ -29,7 +29,7 @@ class Trip():
         self.name = kwargs.get("name")
         self.airport = kwargs.get("airport")
         self.dates = kwargs.get("dates")
-        self.date_start = kwargs.get("date_start")
+        self.date_start = kwargs.get("date_start", datetime.date.today())
         self.date_end = kwargs.get("date_end")
         self.days_of_week = kwargs.get("days_of_week")
 
@@ -187,6 +187,13 @@ def get_previous_offers(offer):
     ) for offer in previous_offers.fetchall()]
 
 def get_locations_offers(trip: Trip):
+    def filter_on_date(flightRecord, trip: Trip):
+        current_date = datetime.datetime.strptime(flightRecord.date_flight, "%Y-%m-%d").date()
+        start_date = datetime.datetime.strptime(trip.date_start, "%Y-%m-%d").date()
+        end_date = datetime.datetime.strptime(trip.date_end, "%Y-%m-%d").date()
+        
+        return start_date <= current_date <= end_date
+
     local_conn = sqlite3.connect("data.db")
     cursor = local_conn.cursor()
 
@@ -203,13 +210,14 @@ def get_locations_offers(trip: Trip):
             if offer[4] < reduced_offers[offer[2]][4]:
                 reduced_offers[offer[2]] = offer
 
-    return [FlightRecord(
+    ret = [FlightRecord(
         external_id = offer[1],
         date_flight = offer[2],
         destination = offer[3],
         price = offer[4],
         date_search = offer[5]
     ) for offer in list(reduced_offers.values())]
+    return list(filter(lambda x: filter_on_date(x, trip=trip), ret))
 
 def show_best_dates():
     for trip in get_trips_to_watch():

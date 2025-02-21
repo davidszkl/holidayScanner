@@ -1,0 +1,18 @@
+[
+    {
+        "name": "Albania",
+        "airport": "TIA",
+        "dates": [],
+        "date_start": false,
+        "date_end": "2025-05-01",
+        "days_of_week": [3,4]
+    },
+    {
+        "name": "Poland",
+        "airport": "WAW,WMI",
+        "dates": [],
+        "date_start": "2025-08-01",
+        "date_end": "2025-08-07",
+        "days_of_week": [0,1,2,3,4,5,6]
+    }
+]
